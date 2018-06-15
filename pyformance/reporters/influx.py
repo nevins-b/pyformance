@@ -32,7 +32,7 @@ class InfluxReporter(Reporter):
                  username=DEFAULT_INFLUX_USERNAME,
                  password=DEFAULT_INFLUX_PASSWORD,
                  port=DEFAULT_INFLUX_PORT, protocol=DEFAULT_INFLUX_PROTOCOL,
-                 autocreate_database=False, clock=None):
+                 autocreate_database=False, clock=None, tags={}):
         super(InfluxReporter, self).__init__(
             registry, reporting_interval, clock)
         self.prefix = prefix
@@ -44,6 +44,12 @@ class InfluxReporter(Reporter):
         self.server = server
         self.autocreate_database = autocreate_database
         self._did_create_database = False
+        self.tags = self._flatten_dict(tags)
+
+    def _flatten_dict(self, data):
+        return ",".join(["%s=%s" % (k, v if type(v) is not str \
+                                               else '"{}"'.format(v))
+                              for (k, v) in data.items()])
 
     def _create_database(self):
         url = "%s://%s:%s/query" % (self.protocol, self.server, self.port)
@@ -72,10 +78,11 @@ class InfluxReporter(Reporter):
                 table = key
             else:
                 table = "%s.%s" % (self.prefix, key)
-            values = ",".join(["%s=%s" % (k, v if type(v) is not str \
-                                               else '"{}"'.format(v))
-                              for (k, v) in metric_values.items()])
-            line = "%s %s %s" % (table, values, timestamp)
+            values = self._flatten_dict(metric_values)
+            if len(self.tags) > 0:
+                line = "%s,%s %s %s" % (table, self.tags, values, timestamp)
+            else:
+                line = "%s %s %s" % (table, values, timestamp)
             post_data.append(line)
         post_data = "\n".join(post_data)
         path = "/write?db=%s&precision=s" % self.database
